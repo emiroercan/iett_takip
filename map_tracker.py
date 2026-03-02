@@ -31,7 +31,7 @@ console = Console()
 # │  Distance Matrix API etkin olmalı.                                          │
 # │  Alternatif: terminal'de  export GMAPS_KEY="anahtarınız"                   │
 # └─────────────────────────────────────────────────────────────────────────────┘
-GMAPS_API_KEY = "AIzaSyDpCmOUoiyBfl1Cw5N4UiBvTalxvFnckjE"                                     # ← buraya yapıştırın
+GMAPS_API_KEY = "KEY"                                     # ← buraya yapıştırın
 GMAPS_API_KEY = os.environ.get("GMAPS_KEY", GMAPS_API_KEY)   # env var override
 
 # ── Sabit hedef: 4. Levent ────────────────────────────────────────────────────
