@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>59RK/59RS · Log</title>
+  <style>
+    :root {
+      --bg:     #0d1117; --surface: #161b22; --border: #30363d;
+      --accent: #4fc3f7; --red:     #e94560; --yellow: #f0b429;
+      --green:  #3fb950; --text:    #e6edf3; --dim:    #8b949e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { min-height: 100dvh; background: var(--bg); color: var(--text);
+           font-family: monospace; font-size: 13px; display: flex; flex-direction: column; }
+
+    /* ── Nav ── */
+    nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    nav a { flex: 1; text-align: center; padding: 10px 4px; color: var(--dim);
+            text-decoration: none; font-size: 13px; border-bottom: 2px solid transparent; }
+    nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+    nav a:hover  { color: var(--text); }
+
+    /* ── Toolbar ── */
+    #toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+               background: var(--surface); border-bottom: 1px solid var(--border);
+               flex-wrap: wrap; flex-shrink: 0; }
+    .filter-btn { background: var(--bg); border: 1px solid var(--border); color: var(--dim);
+                  padding: 4px 10px; border-radius: 4px; cursor: pointer; font-family: monospace;
+                  font-size: 12px; white-space: nowrap; }
+    .filter-btn.on { border-color: var(--accent); color: var(--accent); }
+    #auto-toggle { margin-left: auto; background: var(--bg); border: 1px solid var(--border);
+                   color: var(--dim); padding: 4px 10px; border-radius: 4px; cursor: pointer;
+                   font-family: monospace; font-size: 12px; }
+    #auto-toggle.on { border-color: var(--green); color: var(--green); }
+    #refresh-btn { background: var(--bg); border: 1px solid var(--accent); color: var(--accent);
+                   padding: 4px 10px; border-radius: 4px; cursor: pointer;
+                   font-family: monospace; font-size: 12px; }
+
+    /* ── Event log table ── */
+    #events-section { flex: 1; overflow-y: auto; }
+    .ev-row { display: grid; grid-template-columns: 72px 130px 1fr;
+              gap: 6px; align-items: start; padding: 5px 12px;
+              border-bottom: 1px solid #30363d55; }
+    .ev-row:hover { background: var(--surface); }
+    .ev-ts   { color: var(--dim); font-size: 12px; padding-top: 1px; }
+    .ev-type { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev-detail { color: var(--dim); font-size: 12px; word-break: break-all; }
+    .ev-detail b { color: var(--text); }
+
+    /* row color coding */
+    .c-poll    .ev-type { color: var(--dim); }
+    .c-passed  .ev-type { color: var(--green); }
+    .c-ghost   .ev-type { color: var(--yellow); }
+    .c-error   .ev-type { color: var(--red); }
+    .c-info    .ev-type { color: var(--accent); }
+
+    /* ── Raw API section ── */
+    #raw-section { border-top: 2px solid var(--border); flex-shrink: 0; }
+    #raw-header { display: flex; align-items: center; justify-content: space-between;
+                  padding: 10px 12px; cursor: pointer; background: var(--surface);
+                  border-bottom: 1px solid var(--border); user-select: none; }
+    #raw-header span { color: var(--accent); }
+    #raw-body { display: none; max-height: 320px; overflow-y: auto; }
+    .raw-row { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .raw-meta { display: flex; gap: 12px; margin-bottom: 4px; }
+    .raw-ts   { color: var(--dim); font-size: 12px; }
+    .raw-hat  { color: var(--red); font-weight: bold; }
+    .raw-cnt  { color: var(--accent); }
+    .raw-buses { margin-top: 6px; }
+    .raw-bus  { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 4px 12px; font-size: 11px; padding: 6px 10px;
+                background: var(--bg); border-radius: 4px; margin-bottom: 4px; }
+    .raw-bus .field { color: var(--dim); }
+    .raw-bus .field b { color: var(--text); }
+
+    #empty-msg { padding: 20px; text-align: center; color: var(--dim); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">🗺 Harita</a>
+  <a href="/display">🚏 Durak</a>
+  <a href="/logs-page" class="active">📋 Log</a>
+</nav>
+
+<div id="toolbar">
+  <button class="filter-btn on" data-filter="all"            onclick="setFilter(this)">Tümü</button>
+  <button class="filter-btn"   data-filter="poll"           onclick="setFilter(this)">poll</button>
+  <button class="filter-btn"   data-filter="bus_passed"     onclick="setFilter(this)">✓ geçti</button>
+  <button class="filter-btn"   data-filter="ghost_filtered" onclick="setFilter(this)">☠ hayalet</button>
+  <button class="filter-btn"   data-filter="errors"         onclick="setFilter(this)">✗ hatalar</button>
+  <button id="refresh-btn" onclick="loadAll()">↻ Yenile</button>
+  <button id="auto-toggle" onclick="toggleAuto()">⏱ Oto: kapalı</button>
+</div>
+
+<div id="events-section">
+  <div id="events-list"><div id="empty-msg">Yükleniyor...</div></div>
+</div>
+
+<div id="raw-section">
+  <div id="raw-header" onclick="toggleRaw()">
+    <span>📦 Ham API Yanıtları</span>
+    <span id="raw-arrow">▼</span>
+  </div>
+  <div id="raw-body">
+    <div id="raw-list"><div id="empty-msg">Yükleniyor...</div></div>
+  </div>
+</div>
+
+<script>
+const ERROR_EVENTS = new Set(['api_retry','api_fail','gmaps_error','stale_gps']);
+const EV_CLASS = {
+  poll:           'c-poll',
+  bus_passed:     'c-passed',
+  cooldown_expired:'c-passed',
+  ghost_filtered: 'c-ghost',
+  api_retry:      'c-error',
+  api_fail:       'c-error',
+  gmaps_error:    'c-error',
+  stale_gps:      'c-error',
+  startup:        'c-info',
+  shutdown:       'c-info',
+  config_changed: 'c-info',
+};
+const EV_ICON = {
+  startup:'▶', shutdown:'■', poll:'·', ghost_filtered:'☠',
+  bus_passed:'✓', api_empty:'?', api_retry:'↻', api_fail:'✗',
+  stale_gps:'⚠', gmaps_error:'!', config_changed:'⚙', cooldown_expired:'⌛'
+};
+
+let currentFilter = 'all';
+let allEvents = [];
+let autoTimer = null;
+let rawOpen = false;
+
+function setFilter(btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  currentFilter = btn.dataset.filter;
+  renderEvents();
+}
+
+function matchesFilter(e) {
+  if (currentFilter === 'all')    return true;
+  if (currentFilter === 'errors') return ERROR_EVENTS.has(e.event);
+  return e.event === currentFilter;
+}
+
+function fmtDetail(e) {
+  const parts = [];
+  if (e.kapino)        parts.push(`<b>${e.kapino}</b>`);
+  if (e.hat_no)        parts.push(`[${e.hat_no}]`);
+  if (e.error)         parts.push(`<span style="color:var(--red)">${e.error.slice(0,120)}</span>`);
+  if (e.stats)         parts.push(`raw=${e.stats.raw} ok=${e.stats.confirmed} ghost=${e.stats.ghosts||0}`);
+  if (e.dist_to_dest_km !== undefined) parts.push(`dist=${e.dist_to_dest_km}km`);
+  if (e.max_move_km !== undefined)     parts.push(`max_move=${e.max_move_km}km`);
+  if (e.gps_age_secs !== undefined)    parts.push(`gps_age=${e.gps_age_secs}s`);
+  if (e.min_polls !== undefined)       parts.push(`min_polls=${e.min_polls} min_move=${e.min_move_km}km`);
+  if (e.consecutive !== undefined)     parts.push(`ardışık=${e.consecutive}`);
+  return parts.join('  ') || '';
+}
+
+function renderEvents() {
+  const filtered = allEvents.filter(matchesFilter);
+  const list = document.getElementById('events-list');
+  if (filtered.length === 0) {
+    list.innerHTML = '<div id="empty-msg">Eşleşen olay yok.</div>';
+    return;
+  }
+  list.innerHTML = filtered.slice().reverse().map(e => {
+    const ts     = (e.ts||'').slice(11,19);
+    const icon   = EV_ICON[e.event] || '·';
+    const cls    = EV_CLASS[e.event] || 'c-poll';
+    const detail = fmtDetail(e);
+    return `<div class="ev-row ${cls}">
+      <span class="ev-ts">${ts}</span>
+      <span class="ev-type">${icon} ${e.event}</span>
+      <span class="ev-detail">${detail}</span>
+    </div>`;
+  }).join('');
+}
+
+async function loadEvents() {
+  try {
+    const r = await fetch('/logs?n=200'), data = await r.json();
+    allEvents = data.events || [];
+    renderEvents();
+  } catch(e) { console.error(e); }
+}
+
+async function loadRaw() {
+  try {
+    const r = await fetch('/logs/raw?n=20'), data = await r.json();
+    const list = document.getElementById('raw-list');
+    const entries = data.entries || [];
+    if (entries.length === 0) {
+      list.innerHTML = '<div id="empty-msg">Ham log bulunamadı.</div>';
+      return;
+    }
+    list.innerHTML = entries.slice().reverse().map(entry => {
+      const busesHtml = (entry.buses || []).map(b => `
+        <div class="raw-bus">
+          <span class="field">Kapı: <b>${b.kapino||'?'}</b></span>
+          <span class="field">Hat: <b>${b.hatkodu||b.hat_no||'?'}</b></span>
+          <span class="field">Güzergah: <b>${b.guzergahkodu||'?'}</b></span>
+          <span class="field">Yön: <b style="font-size:10px">${(b.yon||'?').slice(0,30)}</b></span>
+          <span class="field">Hız: <b>${b.hiz||'?'} km/h</b></span>
+          <span class="field">Konum: <b>${b.enlem||'?'}, ${b.boylam||'?'}</b></span>
+          <span class="field">GPS: <b>${(b.son_konum_zamani||'?').slice(11)}</b></span>
+          <span class="field">Durak: <b>${b.yakinDurakKodu||'?'}</b></span>
+        </div>`).join('');
+      return `<div class="raw-row">
+        <div class="raw-meta">
+          <span class="raw-ts">${(entry.ts||'').slice(11,19)}</span>
+          <span class="raw-hat">${entry.hat_no||'?'}</span>
+          <span class="raw-cnt">${entry.count} araç</span>
+        </div>
+        <div class="raw-buses">${busesHtml}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+function toggleRaw() {
+  rawOpen = !rawOpen;
+  document.getElementById('raw-body').style.display  = rawOpen ? 'block' : 'none';
+  document.getElementById('raw-arrow').textContent   = rawOpen ? '▲' : '▼';
+  if (rawOpen) loadRaw();
+}
+
+async function loadAll() {
+  await loadEvents();
+  if (rawOpen) await loadRaw();
+}
+
+function toggleAuto() {
+  const btn = document.getElementById('auto-toggle');
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    btn.classList.remove('on');
+    btn.textContent = '⏱ Oto: kapalı';
+  } else {
+    autoTimer = setInterval(loadAll, 30_000);
+    btn.classList.add('on');
+    btn.textContent = '⏱ Oto: açık';
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>

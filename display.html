@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>59RK/59RS · Durak</title>
+  <style>
+    :root {
+      --bg:     #07090f; --surface: #0e1117; --border: #1e2430;
+      --accent: #4fc3f7; --red:     #e94560; --yellow: #f0b429;
+      --green:  #3fb950; --text:    #e6edf3; --dim:    #4a5568;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { min-height: 100dvh; background: var(--bg); color: var(--text);
+           font-family: monospace; display: flex; flex-direction: column; }
+
+    /* ── Nav ── */
+    nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    nav a { flex: 1; text-align: center; padding: 10px 4px; color: var(--dim);
+            text-decoration: none; font-size: 13px; border-bottom: 2px solid transparent; }
+    nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+    nav a:hover  { color: var(--text); }
+
+    /* ── Header ── */
+    #header { padding: 18px 20px 12px; border-bottom: 1px solid var(--border); }
+    #header h1 { font-size: clamp(18px, 4vw, 28px); color: var(--accent); letter-spacing: 2px; }
+    #header .sub { font-size: 13px; color: var(--dim); margin-top: 4px; }
+    #header .sub span { color: var(--red); }
+
+    /* ── Active buses ── */
+    #buses-section { flex: 1; padding: 0 12px; }
+
+    .col-hdr { display: grid; grid-template-columns: 80px 1fr 1fr;
+               gap: 8px; padding: 12px 16px 6px;
+               font-size: 11px; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; }
+
+    .bus-row { display: grid; grid-template-columns: 80px 1fr 1fr;
+               gap: 8px; align-items: center;
+               padding: 14px 16px; border-bottom: 1px solid var(--border);
+               transition: background 0.2s; }
+    .bus-row:hover { background: var(--surface); }
+
+    .bus-hat  { font-size: clamp(20px, 5vw, 32px); font-weight: bold; color: var(--red); }
+    .bus-dist { font-size: clamp(16px, 3.5vw, 24px); color: var(--dim); }
+    .bus-eta  { font-size: clamp(22px, 5.5vw, 38px); font-weight: bold; text-align: right; }
+    .eta-green  { color: var(--green); }
+    .eta-yellow { color: var(--yellow); }
+    .eta-white  { color: var(--text); }
+
+    #no-buses { padding: 40px 20px; text-align: center; color: var(--dim);
+                font-size: clamp(14px, 3vw, 20px); }
+    #no-buses .icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* ── Passed section ── */
+    #passed-section { padding: 0 12px 20px; border-top: 1px solid var(--border); margin-top: 4px; }
+    #passed-section h2 { font-size: 11px; color: var(--dim); letter-spacing: 1px;
+                         text-transform: uppercase; padding: 12px 4px 8px; }
+    .passed-row { display: flex; justify-content: space-between; align-items: center;
+                  padding: 8px 16px; border-bottom: 1px solid var(--border); }
+    .passed-hat  { font-size: clamp(15px, 3.5vw, 22px); color: var(--dim); font-weight: bold; }
+    .passed-ago  { font-size: clamp(13px, 3vw, 18px); color: var(--dim); }
+    #no-passed   { padding: 10px 16px; color: var(--dim); font-size: 13px; }
+
+    /* ── Footer / countdown ── */
+    #footer { padding: 10px 20px; background: var(--surface); border-top: 1px solid var(--border);
+              display: flex; justify-content: space-between; align-items: center;
+              font-size: 12px; color: var(--dim); flex-shrink: 0; flex-wrap: wrap; gap: 6px; }
+    #footer .upd { }
+    #footer .cdwn { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">🗺 Harita</a>
+  <a href="/display" class="active">🚏 Durak</a>
+  <a href="/logs-page">📋 Log</a>
+</nav>
+
+<div id="header">
+  <h1>4. LEVENT</h1>
+  <div class="sub"><span>59RK</span> Sarıtepe → Boğaziçi &nbsp;·&nbsp; <span>59RS</span> Sarıyer → Rumeli Hisar Üstü</div>
+</div>
+
+<div id="buses-section">
+  <div class="col-hdr">
+    <span>Hat</span><span>Mesafe</span><span style="text-align:right">ETA</span>
+  </div>
+  <div id="bus-list">
+    <div id="no-buses"><div class="icon">🚏</div>Araç bekleniyor...</div>
+  </div>
+</div>
+
+<div id="passed-section">
+  <h2>Son Geçenler</h2>
+  <div id="passed-list">
+    <div id="no-passed">Henüz geçen araç yok.</div>
+  </div>
+</div>
+
+<div id="footer">
+  <span class="upd">Son güncelleme: <span id="upd-time">—</span></span>
+  <span class="cdwn">Sonraki: <span id="cdwn">—</span></span>
+  <span id="wakelock-indicator" style="color:var(--dim);font-size:11px" title="Ekran kilidi durumu">🔆 —</span>
+</div>
+
+<script>
+let nextAt = Date.now();
+
+function etaClass(etaStr) {
+  if (!etaStr || etaStr.includes('—')) return 'eta-white';
+  const m = etaStr.match(/(\d+)\s*dk/);
+  if (!m) return 'eta-white';
+  const mins = parseInt(m[1]);
+  if (mins <= 5)  return 'eta-green';
+  if (mins <= 10) return 'eta-yellow';
+  return 'eta-white';
+}
+
+async function update() {
+  try {
+    const r = await fetch('/buses'), data = await r.json();
+    nextAt = Date.now() + (data.next_update_secs || 120) * 1000;
+    document.getElementById('upd-time').textContent = data.last_update || '—';
+
+    // ── Active buses ──
+    const bl = document.getElementById('bus-list');
+    if (data.buses.length === 0) {
+      bl.innerHTML = '<div id="no-buses"><div class="icon">🚏</div>Yaklaşan araç yok.</div>';
+    } else {
+      bl.innerHTML = data.buses.map(b => `
+        <div class="bus-row">
+          <div class="bus-hat">${b.hat_no||'?'}</div>
+          <div class="bus-dist">${b.dist_km} km</div>
+          <div class="bus-eta ${etaClass(b.eta)}">${b.eta || '—'}</div>
+        </div>`).join('');
+    }
+
+    // ── Passed buses ──
+    const pl = document.getElementById('passed-list');
+    if (!data.passed_buses || data.passed_buses.length === 0) {
+      pl.innerHTML = '<div id="no-passed">Henüz geçen araç yok.</div>';
+    } else {
+      pl.innerHTML = data.passed_buses.map(p => `
+        <div class="passed-row">
+          <div class="passed-hat">${p.hat_no||'?'}</div>
+          <div class="passed-ago">${p.mins_ago} dk önce geçti</div>
+        </div>`).join('');
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ── Countdown ──
+setInterval(() => {
+  const s = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+  document.getElementById('cdwn').textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}, 1000);
+
+setInterval(update, 120_000);
+update();
+
+// ── Screen Wake Lock ───────────────────────────────────────────────────────
+let wakeLock = null;
+
+async function requestWakeLock() {
+  const el = document.getElementById('wakelock-indicator');
+  if (!('wakeLock' in navigator)) {
+    el.textContent = '🔆 desteklenmiyor';
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    el.style.color = 'var(--green)';
+    el.textContent  = '🔆 ekran açık';
+    wakeLock.addEventListener('release', () => {
+      el.style.color = 'var(--dim)';
+      el.textContent  = '🔆 serbest';
+    });
+  } catch (err) {
+    el.textContent = '🔆 kilitlenemiyor';
+  }
+}
+
+// Re-acquire when tab comes back into focus (lock is released on tab hide)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+});
+
+requestWakeLock();
+</script>
+</body>
+</html>
